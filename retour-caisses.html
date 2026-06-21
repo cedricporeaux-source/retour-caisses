@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Retour Caisses</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+--blue-dark: #0a2540; --blue-mid: #1a4a7a; --blue-light: #e8f4fd;
+--accent: #00b4d8; --accent2: #0077b6; --green: #2ecc71;
+--red: #e74c3c; --gray: #6b7280; --bg: #f0f6fb; --white: #ffffff;
+--orange: #f59e0b; --purple: #7b2ff7;
+--radius: 14px; --shadow: 0 2px 12px rgba(10,37,64,0.10);
+}
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--blue-dark); min-height: 100vh; padding-bottom: 40px; }
+header { background: linear-gradient(135deg, var(--blue-dark) 0%, var(--blue-mid) 100%); color: white; padding: 16px 16px 12px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+header h1 { font-size: 1.3rem; font-weight: 700; }
+header p { font-size: 0.8rem; opacity: 0.75; margin-top: 3px; }
+.sync-bar { background: #1a4a7a; color: white; text-align: center; font-size: 0.75rem; padding: 5px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #aaa; flex-shrink: 0; }
+.sync-dot.ok { background: #2ecc71; }
+.sync-dot.err { background: #e74c3c; }
+.sync-dot.loading { background: #f59e0b; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.tabs { display: flex; background: var(--blue-dark); border-bottom: 2px solid var(--accent); }
+.tab { flex: 1; padding: 11px 4px; text-align: center; font-size: 0.75rem; font-weight: 700; color: rgba(255,255,255,0.5); cursor: pointer; -webkit-tap-highlight-color: transparent; letter-spacing: 0.3px; transition: color 0.2s; }
+.tab.active { color: white; border-bottom: 2px solid var(--accent); margin-bottom: -2px; }
+.page { display: none; }
+.page.active { display: block; }
+.date-bar { background: var(--accent2); color: white; text-align: center; font-size: 0.8rem; padding: 6px; font-weight: 600; }
+.card { background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); margin: 14px 12px; padding: 16px; }
+.card h2 { font-size: 0.95rem; font-weight: 700; color: var(--blue-mid); margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+.card h2::before { content: ''; display: inline-block; width: 4px; height: 16px; background: var(--accent); border-radius: 2px; }
+label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--gray); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.4px; }
+select, input[type="number"], input[type="text"], textarea { width: 100%; padding: 11px 13px; border: 1.5px solid #d1e3f0; border-radius: 10px; font-size: 1rem; color: var(--blue-dark); background: var(--blue-light); outline: none; transition: border-color 0.2s; margin-bottom: 12px; -webkit-appearance: none; }
+select:focus, input:focus, textarea:focus { border-color: var(--accent); background: white; }
+.client-row { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 0; }
+.client-row select { flex: 1; margin-bottom: 0; }
+.btn-icon { flex-shrink: 0; width: 44px; height: 44px; background: var(--accent2); color: white; border: none; border-radius: 10px; font-size: 1.4rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; }
+.btn-icon:active { opacity: 0.8; }
+.code-client-display { display: none; margin-top: 6px; margin-bottom: 10px; }
+.code-client-display.visible { display: flex; align-items: center; gap: 8px; }
+.code-badge { background: var(--blue-dark); color: white; font-size: 0.78rem; font-weight: 700; padding: 4px 10px; border-radius: 20px; letter-spacing: 0.5px; white-space: nowrap; }
+.code-badge.vide { background: #ccc; color: #666; }
+.btn-edit-code { background: none; border: 1px solid var(--accent); color: var(--accent2); font-size: 0.72rem; font-weight: 600; padding: 3px 8px; border-radius: 6px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.code-edit-box { display: none; margin-top: 6px; margin-bottom: 10px; background: #fff8e1; border: 1.5px solid var(--orange); border-radius: 10px; padding: 10px; }
+.code-edit-box.visible { display: block; }
+.inline-row { display: flex; gap: 8px; }
+.inline-row input { flex: 1; margin-bottom: 0; text-transform: uppercase; }
+.btn-ok { flex-shrink: 0; padding: 11px 14px; background: var(--orange); color: white; border: none; border-radius: 10px; font-size: 0.88rem; font-weight: 700; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.btn-cancel { flex-shrink: 0; padding: 11px 10px; background: #eee; color: var(--gray); border: none; border-radius: 10px; font-size: 0.88rem; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.new-client-box { display: none; margin-top: 8px; background: var(--blue-light); border-radius: 10px; padding: 10px; border: 1.5px solid var(--accent); }
+.new-client-box.visible { display: block; }
+.new-client-box label { color: var(--accent2); margin-bottom: 4px; }
+.mb8 { margin-bottom: 8px; }
+.btn-save-client { flex-shrink: 0; padding: 11px 14px; background: var(--green); color: white; border: none; border-radius: 10px; font-size: 0.88rem; font-weight: 700; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.client-separator { margin-bottom: 12px; }
+.type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.type-btn { padding: 10px 6px; border: 1.5px solid #d1e3f0; border-radius: 10px; background: var(--blue-light); font-size: 0.78rem; font-weight: 600; color: var(--blue-dark); cursor: pointer; text-align: center; transition: all 0.15s; -webkit-tap-highlight-color: transparent; line-height: 1.3; }
+.type-btn.selected { background: var(--accent); border-color: var(--accent); color: white; }
+.type-btn.custom { border-style: dashed; }
+.new-type-box { display: none; background: #f0fff4; border: 1.5px solid var(--green); border-radius: 10px; padding: 10px; margin-bottom: 12px; }
+.new-type-box.visible { display: block; }
+.btn-add { width: 100%; padding: 14px; background: linear-gradient(135deg, var(--accent2), var(--accent)); color: white; border: none; border-radius: var(--radius); font-size: 1.05rem; font-weight: 700; cursor: pointer; box-shadow: 0 3px 10px rgba(0,119,182,0.3); -webkit-tap-highlight-color: transparent; margin-top: 4px; }
+.btn-add:active { opacity: 0.85; }
+.list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.badge { background: var(--accent); color: white; font-size: 0.75rem; font-weight: 700; padding: 2px 9px; border-radius: 20px; }
+.entry-item { display: flex; align-items: flex-start; gap: 10px; padding: 11px 0; border-bottom: 1px solid #e8f0f8; user-select: none; }
+.entry-item:last-child { border-bottom: none; }
+.entry-num { background: var(--blue-dark); color: white; font-weight: 700; font-size: 0.75rem; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+.entry-info { flex: 1; }
+.entry-client { font-weight: 700; font-size: 0.92rem; }
+.entry-code { display: inline-block; background: var(--blue-dark); color: white; font-size: 0.68rem; font-weight: 700; padding: 1px 7px; border-radius: 10px; margin-left: 5px; vertical-align: middle; }
+.entry-detail { font-size: 0.78rem; color: var(--gray); margin-top: 2px; }
+.entry-count { font-size: 1.1rem; font-weight: 800; color: var(--accent2); white-space: nowrap; }
+.empty-state { text-align: center; padding: 20px; color: #aaa; font-size: 0.85rem; }
+.totaux-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+.total-box { background: var(--blue-light); border-radius: 10px; padding: 12px; text-align: center; }
+.total-box .num { font-size: 1.6rem; font-weight: 800; color: var(--blue-dark); }
+.total-box .lbl { font-size: 0.7rem; color: var(--gray); font-weight: 600; text-transform: uppercase; }
+.btn-rapport { width: 100%; padding: 15px; background: linear-gradient(135deg, #155724, var(--green)); color: white; border: none; border-radius: var(--radius); font-size: 1.05rem; font-weight: 700; cursor: pointer; margin-top: 6px; box-shadow: 0 3px 10px rgba(46,204,113,0.3); -webkit-tap-highlight-color: transparent; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.btn-pdf { width: 100%; padding: 15px; background: linear-gradient(135deg, var(--purple), #b06ef3); color: white; border: none; border-radius: var(--radius); font-size: 1.05rem; font-weight: 700; cursor: pointer; margin-top: 8px; box-shadow: 0 3px 10px rgba(123,47,247,0.3); -webkit-tap-highlight-color: transparent; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.btn-reset { width: 100%; padding: 12px; background: none; color: var(--red); border: 1.5px solid var(--red); border-radius: var(--radius); font-size: 0.9rem; font-weight: 600; cursor: pointer; margin-top: 8px; -webkit-tap-highlight-color: transparent; }
+.btn-sync { width: 100%; padding: 12px; background: none; color: var(--accent2); border: 1.5px solid var(--accent2); border-radius: var(--radius); font-size: 0.9rem; font-weight: 600; cursor: pointer; margin-top: 8px; -webkit-tap-highlight-color: transparent; }
+.hist-day { margin-bottom: 14px; border: 1.5px solid #d1e3f0; border-radius: var(--radius); overflow: hidden; }
+.hist-day-header { background: var(--blue-mid); color: white; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.hist-day-title { font-weight: 700; font-size: 0.88rem; }
+.hist-day-meta { font-size: 0.75rem; opacity: 0.8; }
+.hist-day-body { display: none; padding: 10px 14px; background: white; }
+.hist-day-body.open { display: block; }
+.hist-entry { font-size: 0.8rem; padding: 4px 0; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; }
+.hist-entry:last-child { border-bottom: none; }
+.hist-client { font-weight: 600; }
+.hist-detail { color: var(--gray); font-size: 0.75rem; }
+.hist-nb { color: var(--accent2); font-weight: 700; }
+.hist-actions { display: flex; gap: 8px; padding: 10px 0 0; }
+.btn-hist-pdf { flex: 1; padding: 9px; background: linear-gradient(135deg, var(--purple), #b06ef3); color: white; border: none; border-radius: 8px; font-size: 0.8rem; font-weight: 700; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.btn-hist-del { padding: 9px 12px; background: none; color: var(--red); border: 1.5px solid var(--red); border-radius: 8px; font-size: 0.8rem; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.empty-hist { text-align: center; padding: 30px; color: #aaa; font-size: 0.88rem; }
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--blue-dark); color: white; padding: 11px 22px; border-radius: 30px; font-size: 0.88rem; font-weight: 600; box-shadow: 0 4px 16px rgba(0,0,0,0.25); z-index: 999; opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap; }
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+<h1>🐟 Retour Caisses</h1>
+<p>Saisie des retours de bacs à poisson</p>
+</header>
+
+<div class="sync-bar">
+<div class="sync-dot loading" id="sync-dot"></div>
+<span id="sync-label">Connexion en cours…</span>
+</div>
+
+<div class="tabs">
+<div class="tab active" onclick="showPage('saisie')">✏️ Saisie</div>
+<div class="tab" onclick="showPage('historique')">📅 Historique</div>
+</div>
+
+<div class="page active" id="page-saisie">
+<div class="date-bar" id="datebar"></div>
+
+<div class="card">
+<h2>Nouvelle saisie</h2>
+<label>Client</label>
+<div class="client-row">
+<select id="sel-client" onchange="onClientChange()"></select>
+<button class="btn-icon" onclick="toggleNouveauClient()" title="Ajouter un client">＋</button>
+</div>
+<div class="code-client-display" id="code-display">
+<span id="code-badge" class="code-badge vide">Pas de code</span>
+<button class="btn-edit-code" onclick="toggleEditCode()">✏️ Modifier le code</button>
+</div>
+<div class="code-edit-box" id="code-edit-box">
+<label style="color:#b45309; margin-bottom:6px;">Code client (logiciel)</label>
+<div class="inline-row">
+<input type="text" id="input-edit-code" placeholder="Ex: 00123" maxlength="20">
+<button class="btn-ok" onclick="sauvegarderCode()">OK</button>
+<button class="btn-cancel" onclick="annulerEditCode()">✕</button>
+</div>
+</div>
+<div class="new-client-box" id="new-client-box">
+<label>Nom du nouveau client</label>
+<div class="inline-row mb8">
+<input type="text" id="input-new-client" placeholder="Nom du client…" style="text-transform:uppercase; margin-bottom:0;">
+</div>
+<label>Code client (optionnel)</label>
+<div class="inline-row">
+<input type="text" id="input-new-code" placeholder="Ex: 00123" maxlength="20" style="margin-bottom:0;">
+<button class="btn-save-client" onclick="sauvegarderNouveauClient()">OK</button>
+<button class="btn-cancel" onclick="annulerNouveauClient()">✕</button>
+</div>
+</div>
+<div class="client-separator"></div>
+
+<label>Type de caisse</label>
+<div class="new-type-box" id="new-type-box">
+<label style="color:#155724; margin-bottom:6px;">Nouveau type de caisse</label>
+<div class="inline-row">
+<input type="text" id="input-new-type" placeholder="Ex: Bacs 80 l" style="margin-bottom:0; text-transform:uppercase;">
+<button class="btn-ok" style="background:var(--green);" onclick="sauvegarderNouveauType()">OK</button>
+<button class="btn-cancel" onclick="annulerNouveauType()">✕</button>
+</div>
+</div>
+<div class="type-grid" id="type-grid"></div>
+
+<label>Nombre</label>
+<input type="number" id="nb-caisses" placeholder="0" min="1" inputmode="numeric">
+<label>Remarques (optionnel)</label>
+<textarea id="remarques" rows="2" placeholder="Ex: caisses abîmées, manquantes…"></textarea>
+<button class="btn-add" onclick="ajouterEntree()">＋ Ajouter</button>
+</div>
+
+<div class="card">
+<div class="list-header">
+<h2 style="margin-bottom:0">Saisies du jour</h2>
+<span class="badge" id="badge-count">0</span>
+</div>
+<div id="liste-entrees"><div class="empty-state">Aucune saisie pour l'instant</div></div>
+</div>
+
+<div class="card">
+<h2>Récapitulatif</h2>
+<div class="totaux-grid">
+<div class="total-box"><div class="num" id="total-caisses">0</div><div class="lbl">Unités total</div></div>
+<div class="total-box"><div class="num" id="total-clients">0</div><div class="lbl">Clients</div></div>
+</div>
+<button class="btn-rapport" onclick="copierRapport(entrees)">📋 Copier le rapport (WhatsApp/SMS)</button>
+<button class="btn-pdf" onclick="genererPDF(entrees, null)">📄 Générer le rapport PDF</button>
+<button class="btn-sync" onclick="chargerDepuisSupabase()">🔄 Rafraîchir depuis le serveur</button>
+<button class="btn-reset" id="btn-reset" style="display:none" onclick="resetSaisies()">🗑 Archiver et effacer la journée</button>
+</div>
+</div>
+
+<div class="page" id="page-historique">
+<div class="card">
+<h2>Historique des journées</h2>
+<div id="historique-liste"><div class="empty-hist">Aucun historique disponible</div></div>
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════ CONFIG SUPABASE ══════════
+const SUPA_URL = 'https://opnslsdmacfthhiztwpo.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9wbnNsc2RtYWNmdGhoaXp0d3BvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwMTQ1MjEsImV4cCI6MjA5NzU5MDUyMX0.pI5tM2n7YMWWYIP-oJFxSWkHg8PiBsA0CmtAzVieBwE';
+
+async function supa(table, method='GET', body=null, extra='') {
+  const url = SUPA_URL + '/rest/v1/' + table + extra;
+  const opts = {
+    method,
+    headers: {
+      'apikey': SUPA_KEY,
+      'Authorization': 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': method === 'POST' ? 'resolution=merge-duplicates,return=minimal' : 'return=minimal'
+    }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(url, opts);
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(err);
+  }
+  if (method === 'GET') return r.json();
+  return true;
+}
+
+// ══════════ DONNÉES ══════════
+let entrees = [];
+let typeSelectionne = '';
+
+const CLIENTS_PAR_DEFAUT = [
+  { nom: 'ANGE DE MER', code: '' },
+  { nom: 'ANNAPAU', code: '' },
+  { nom: 'BUQUET', code: '' },
+  { nom: 'CHAUVIN', code: '' },
+  { nom: 'FORO', code: '' },
+  { nom: 'GWENNRANN POISSONNERIE', code: '' },
+  { nom: 'JAFFRAY MARCEL', code: '' },
+  { nom: 'LES VIVIERS DU MES', code: '' },
+  { nom: "L'ETALE POISSONNERIE", code: '' },
+  { nom: 'PIRIACAISE POISSONNERIE', code: '' },
+];
+const TYPES_PAR_DEFAUT = [
+  'CAISSES VERTES ANCHOIS','BACS 30 L','BACS 30 L EXT',
+  'BACS 35 L','BACS 35 L EXT','BACS 60 L','BACS 60 L EXT','PALETTE PLASTIQUE EXPE'
+];
+
+let clients = [];
+let types = [];
+let historique = JSON.parse(localStorage.getItem('retour_historique') || '[]');
+
+// ══════════ DATE ══════════
+const now = new Date();
+const todayStr = now.toLocaleDateString('fr-FR');
+const opts = { weekday:'long', day:'numeric', month:'long', year:'numeric' };
+document.getElementById('datebar').textContent =
+  now.toLocaleDateString('fr-FR', opts).replace(/^\w/, c => c.toUpperCase());
+
+// ══════════ SYNC STATUS ══════════
+function setSyncStatus(status, msg) {
+  const dot = document.getElementById('sync-dot');
+  const lbl = document.getElementById('sync-label');
+  dot.className = 'sync-dot ' + status;
+  lbl.textContent = msg;
+}
+
+// ══════════ INIT SUPABASE ══════════
+async function initSupabase() {
+  setSyncStatus('loading', 'Connexion à Supabase…');
+  try {
+    // Créer tables si besoin via upsert
+    await chargerClients();
+    await chargerTypes();
+    await chargerEntreesAujourdhui();
+    setSyncStatus('ok', '✅ Synchronisé — ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}));
+  } catch(e) {
+    setSyncStatus('err', '❌ Hors ligne — données locales');
+    console.error(e);
+    // Fallback local
+    clients = JSON.parse(localStorage.getItem('retour_clients') || 'null') || CLIENTS_PAR_DEFAUT.map(c=>({...c}));
+    types = JSON.parse(localStorage.getItem('retour_types') || 'null') || [...TYPES_PAR_DEFAUT];
+    entrees = JSON.parse(localStorage.getItem('retour_caisses') || '[]');
+    rafraichirSelectClient();
+    rafraichirTypes();
+    afficher();
+  }
+}
+
+async function chargerClients() {
+  let data = await supa('retour_clients', 'GET', null, '?select=nom,code&order=nom');
+  if (!data || data.length === 0) {
+    // Insérer les clients par défaut
+    await supa('retour_clients', 'POST', CLIENTS_PAR_DEFAUT);
+    data = CLIENTS_PAR_DEFAUT;
+  }
+  clients = data;
+  localStorage.setItem('retour_clients', JSON.stringify(clients));
+  rafraichirSelectClient();
+}
+
+async function chargerTypes() {
+  let data = await supa('retour_types', 'GET', null, '?select=nom,est_defaut&order=nom');
+  if (!data || data.length === 0) {
+    const payload = TYPES_PAR_DEFAUT.map(t => ({ nom: t, est_defaut: true }));
+    await supa('retour_types', 'POST', payload);
+    data = payload;
+  }
+  types = data.map(t => t.nom);
+  localStorage.setItem('retour_types', JSON.stringify(types));
+  rafraichirTypes();
+}
+
+async function chargerEntreesAujourdhui() {
+  const data = await supa('retour_entrees', 'GET', null, '?select=*&date_str=eq.' + encodeURIComponent(todayStr) + '&order=id');
+  entrees = data || [];
+  localStorage.setItem('retour_caisses', JSON.stringify(entrees));
+  afficher();
+}
+
+async function chargerDepuisSupabase() {
+  setSyncStatus('loading', 'Synchronisation…');
+  try {
+    await chargerClients();
+    await chargerTypes();
+    await chargerEntreesAujourdhui();
+    setSyncStatus('ok', '✅ Synchronisé — ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}));
+    showToast('🔄 Données mises à jour !');
+  } catch(e) {
+    setSyncStatus('err', '❌ Erreur de connexion');
+    showToast('⚠️ Impossible de synchroniser');
+  }
+}
+
+// ══════════ NAVIGATION ══════════
+function showPage(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  event.currentTarget.classList.add('active');
+  if (page === 'historique') afficherHistorique();
+}
+
+// ══════════ CLIENTS ══════════
+function getClientObj(nom) { return clients.find(c => c.nom === nom) || null; }
+
+function rafraichirSelectClient(nomASelectionner) {
+  const sel = document.getElementById('sel-client');
+  const ancien = nomASelectionner || sel.value;
+  sel.innerHTML = '<option value="">— Choisir un client —</option>';
+  clients.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.nom; opt.textContent = c.nom; sel.appendChild(opt);
+  });
+  if (ancien) { sel.value = ancien; onClientChange(); }
+}
+
+function onClientChange() {
+  const nom = document.getElementById('sel-client').value;
+  const display = document.getElementById('code-display');
+  const badge = document.getElementById('code-badge');
+  document.getElementById('code-edit-box').classList.remove('visible');
+  if (!nom) { display.classList.remove('visible'); return; }
+  display.classList.add('visible');
+  const cli = getClientObj(nom);
+  if (cli && cli.code) { badge.textContent = 'Code : ' + cli.code; badge.className = 'code-badge'; }
+  else { badge.textContent = 'Pas de code'; badge.className = 'code-badge vide'; }
+}
+
+function toggleEditCode() {
+  const box = document.getElementById('code-edit-box');
+  box.classList.toggle('visible');
+  if (box.classList.contains('visible')) {
+    const cli = getClientObj(document.getElementById('sel-client').value);
+    document.getElementById('input-edit-code').value = cli ? (cli.code || '') : '';
+    document.getElementById('input-edit-code').focus();
+  }
+}
+async function sauvegarderCode() {
+  const nom = document.getElementById('sel-client').value; if (!nom) return;
+  const code = document.getElementById('input-edit-code').value.trim().toUpperCase();
+  const cli = getClientObj(nom); if (cli) cli.code = code;
+  localStorage.setItem('retour_clients', JSON.stringify(clients));
+  try { await supa('retour_clients', 'POST', [{ nom, code }]); } catch(e){}
+  document.getElementById('code-edit-box').classList.remove('visible');
+  onClientChange(); showToast('✅ Code enregistré !');
+}
+function annulerEditCode() { document.getElementById('code-edit-box').classList.remove('visible'); }
+document.getElementById('input-edit-code').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sauvegarderCode(); if (e.key === 'Escape') annulerEditCode();
+});
+
+function toggleNouveauClient() {
+  const box = document.getElementById('new-client-box');
+  box.classList.toggle('visible');
+  if (box.classList.contains('visible')) document.getElementById('input-new-client').focus();
+}
+async function sauvegarderNouveauClient() {
+  const nom = document.getElementById('input-new-client').value.trim().toUpperCase();
+  const code = document.getElementById('input-new-code').value.trim().toUpperCase();
+  if (!nom) { showToast('⚠️ Entre un nom'); return; }
+  if (clients.find(c => c.nom === nom)) { showToast('⚠️ Client déjà existant'); return; }
+  clients.push({ nom, code });
+  clients.sort((a, b) => a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base' }));
+  localStorage.setItem('retour_clients', JSON.stringify(clients));
+  try { await supa('retour_clients', 'POST', [{ nom, code }]); } catch(e){}
+  rafraichirSelectClient(nom);
+  document.getElementById('input-new-client').value = '';
+  document.getElementById('input-new-code').value = '';
+  document.getElementById('new-client-box').classList.remove('visible');
+  showToast('✅ Client ajouté !');
+}
+function annulerNouveauClient() {
+  document.getElementById('input-new-client').value = '';
+  document.getElementById('input-new-code').value = '';
+  document.getElementById('new-client-box').classList.remove('visible');
+}
+document.getElementById('input-new-client').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sauvegarderNouveauClient(); if (e.key === 'Escape') annulerNouveauClient();
+});
+
+// ══════════ TYPES ══════════
+function rafraichirTypes() {
+  const grid = document.getElementById('type-grid');
+  grid.innerHTML = types.map(t => `
+    <button class="type-btn${!TYPES_PAR_DEFAUT.includes(t) ? ' custom' : ''}"
+    onclick="selType(this)">${t}</button>
+  `).join('');
+  // Bouton + ajouter type
+  grid.innerHTML += `<button class="type-btn" style="border-style:dashed;color:var(--accent2)" onclick="toggleNouveauType()">＋ Nouveau type</button>`;
+  if (typeSelectionne) {
+    document.querySelectorAll('.type-btn').forEach(btn => {
+      if (btn.textContent === typeSelectionne) btn.classList.add('selected');
+    });
+  }
+}
+
+function selType(btn) {
+  document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  typeSelectionne = btn.textContent;
+}
+
+function toggleNouveauType() {
+  const box = document.getElementById('new-type-box');
+  box.classList.toggle('visible');
+  if (box.classList.contains('visible')) document.getElementById('input-new-type').focus();
+}
+async function sauvegarderNouveauType() {
+  const val = document.getElementById('input-new-type').value.trim().toUpperCase();
+  if (!val) { showToast('⚠️ Entre un nom'); return; }
+  if (types.includes(val)) { showToast('⚠️ Type déjà existant'); return; }
+  types.push(val);
+  localStorage.setItem('retour_types', JSON.stringify(types));
+  try { await supa('retour_types', 'POST', [{ nom: val, est_defaut: false }]); } catch(e){}
+  document.getElementById('input-new-type').value = '';
+  document.getElementById('new-type-box').classList.remove('visible');
+  rafraichirTypes(); showToast('✅ Type ajouté !');
+}
+function annulerNouveauType() {
+  document.getElementById('input-new-type').value = '';
+  document.getElementById('new-type-box').classList.remove('visible');
+}
+document.getElementById('input-new-type').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sauvegarderNouveauType(); if (e.key === 'Escape') annulerNouveauType();
+});
+
+// ══════════ SAISIE ══════════
+async function ajouterEntree() {
+  const nom = document.getElementById('sel-client').value;
+  const nb = parseInt(document.getElementById('nb-caisses').value);
+  const rem = document.getElementById('remarques').value.trim();
+  if (!nom) { showToast('⚠️ Choisis un client'); return; }
+  if (!typeSelectionne) { showToast('⚠️ Choisis un type de caisse'); return; }
+  if (!nb || nb < 1) { showToast('⚠️ Entre un nombre valide'); return; }
+  const cli = getClientObj(nom);
+  const entry = {
+    id: Date.now(), client: nom, code: cli ? (cli.code || '') : '',
+    type: typeSelectionne, nb, rem,
+    heure: new Date().toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' }),
+    date_str: todayStr
+  };
+  entrees.push(entry);
+  localStorage.setItem('retour_caisses', JSON.stringify(entrees));
+  afficher(); resetForm(); showToast('✅ Ajouté !');
+  // Sync Supabase en arrière-plan
+  try {
+    await supa('retour_entrees', 'POST', [entry]);
+    setSyncStatus('ok', '✅ Synchronisé — ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}));
+  } catch(e) {
+    setSyncStatus('err', '⚠️ Sauvegardé localement');
+  }
+}
+
+function resetForm() {
+  document.getElementById('nb-caisses').value = '';
+  document.getElementById('remarques').value = '';
+  document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('selected'));
+  typeSelectionne = '';
+}
+
+async function supprimerEntree(id) {
+  entrees = entrees.filter(e => e.id !== id);
+  localStorage.setItem('retour_caisses', JSON.stringify(entrees));
+  afficher();
+  try { await supa('retour_entrees', 'DELETE', null, '?id=eq.' + id); } catch(e){}
+}
+
+function afficher() {
+  const liste = document.getElementById('liste-entrees');
+  document.getElementById('badge-count').textContent = entrees.length;
+  const btnReset = document.getElementById('btn-reset');
+  if (entrees.length === 0) {
+    liste.innerHTML = '<div class="empty-state">Aucune saisie pour l\'instant</div>';
+    document.getElementById('total-caisses').textContent = 0;
+    document.getElementById('total-clients').textContent = 0;
+    if (btnReset) btnReset.style.display = 'none';
+    return;
+  }
+  if (btnReset) btnReset.style.display = '';
+  liste.innerHTML = entrees.map((e, i) => `
+    <div class="entry-item"
+      oncontextmenu="event.preventDefault(); supprimerEntree(${e.id})"
+      ontouchstart="startHold(${e.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()">
+      <div class="entry-num">${i+1}</div>
+      <div class="entry-info">
+        <div class="entry-client">${e.client}${e.code ? '<span class="entry-code">'+e.code+'</span>' : ''}</div>
+        <div class="entry-detail">${e.type} · ${e.heure}${e.rem ? ' · ' + e.rem : ''}</div>
+      </div>
+      <div class="entry-count">${e.nb}</div>
+      <span style="color:#ddd;font-size:0.7rem;align-self:center;">⋮⋮</span>
+    </div>
+  `).join('');
+  liste.innerHTML += '<div style="text-align:center;font-size:0.7rem;color:#bbb;padding:6px 0;">Appui long pour supprimer une saisie</div>';
+  const totalCaisses = entrees.reduce((s, e) => s + e.nb, 0);
+  const nbClients = [...new Set(entrees.map(e => e.client))].length;
+  document.getElementById('total-caisses').textContent = totalCaisses;
+  document.getElementById('total-clients').textContent = nbClients;
+}
+
+// ── Appui long ──
+let holdTimer = null;
+function startHold(id) {
+  holdTimer = setTimeout(() => {
+    cancelHold();
+    if (navigator.vibrate) navigator.vibrate(60);
+    if (confirm('Supprimer cette saisie ?')) supprimerEntree(id);
+  }, 600);
+}
+function cancelHold() { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } }
+
+// ══════════ RESET + ARCHIVAGE ══════════
+async function resetSaisies() {
+  if (entrees.length === 0) return;
+  if (!confirm('Archiver et effacer les saisies du jour ?')) return;
+  const dateComplete = now.toLocaleDateString('fr-FR', opts).replace(/^\w/, c => c.toUpperCase());
+  historique.unshift({ dateStr: todayStr, dateComplete, entrees: [...entrees] });
+  localStorage.setItem('retour_historique', JSON.stringify(historique));
+  // Supprimer du serveur
+  try { await supa('retour_entrees', 'DELETE', null, '?date_str=eq.' + encodeURIComponent(todayStr)); } catch(e){}
+  entrees = [];
+  localStorage.setItem('retour_caisses', JSON.stringify(entrees));
+  afficher(); showToast('🗑 Journée archivée !');
+}
+
+// ══════════ HISTORIQUE ══════════
+function afficherHistorique() {
+  const cont = document.getElementById('historique-liste');
+  if (historique.length === 0) { cont.innerHTML = '<div class="empty-hist">📭 Aucun historique disponible</div>'; return; }
+  cont.innerHTML = historique.map((jour, ji) => {
+    const total = jour.entrees.reduce((s, e) => s + e.nb, 0);
+    const nbCli = [...new Set(jour.entrees.map(e => e.client))].length;
+    const lignes = jour.entrees.map(e => `
+      <div class="hist-entry">
+        <div><span class="hist-client">${e.client}</span>${e.code ? ' <span style="font-size:0.7rem;color:#888">['+e.code+']</span>' : ''}<br>
+        <span class="hist-detail">${e.type} · ${e.heure}</span></div>
+        <span class="hist-nb">${e.nb}</span>
+      </div>`).join('');
+    return `
+      <div class="hist-day">
+        <div class="hist-day-header" onclick="toggleHistDay(${ji})">
+          <div>
+            <div class="hist-day-title">📅 ${jour.dateStr}</div>
+            <div class="hist-day-meta">${nbCli} client${nbCli>1?'s':''} · ${total} unité${total>1?'s':''}</div>
+          </div>
+          <span style="color:rgba(255,255,255,0.6);font-size:1.1rem">▾</span>
+        </div>
+        <div class="hist-day-body" id="hist-body-${ji}">
+          ${lignes}
+          <div class="hist-actions">
+            <button class="btn-hist-pdf" onclick="genererPDF(historique[${ji}].entrees,'${jour.dateStr}')">📄 PDF</button>
+            <button class="btn-hist-del" onclick="supprimerJour(${ji})">🗑</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function toggleHistDay(ji) { document.getElementById('hist-body-'+ji).classList.toggle('open'); }
+
+function supprimerJour(ji) {
+  if (!confirm('Supprimer cette journée ?')) return;
+  historique.splice(ji, 1);
+  localStorage.setItem('retour_historique', JSON.stringify(historique));
+  afficherHistorique(); showToast('🗑 Journée supprimée');
+}
+
+// ══════════ RAPPORT TEXTE ══════════
+function copierRapport(data) {
+  if (!data || data.length === 0) { showToast('⚠️ Aucune saisie'); return; }
+  const totalCaisses = data.reduce((s, e) => s + e.nb, 0);
+  const parClient = {};
+  data.forEach(e => { if (!parClient[e.client]) parClient[e.client] = []; parClient[e.client].push(e); });
+  let txt = '🐟 RETOUR CAISSES — ' + todayStr + '\n' + '─'.repeat(30) + '\n';
+  Object.entries(parClient).forEach(([client, items]) => {
+    const sous = items.reduce((s, e) => s + e.nb, 0);
+    const code = items[0].code ? ' [' + items[0].code + ']' : '';
+    txt += '\n📦 ' + client + code + ' : ' + sous + ' unité' + (sous>1?'s':'') + '\n';
+    items.forEach(e => { txt += '  • '+e.type+' × '+e.nb; if(e.rem) txt+=' ('+e.rem+')'; txt+=' ['+e.heure+']\n'; });
+  });
+  txt += '\n'+'─'.repeat(30)+'\n✅ TOTAL : '+totalCaisses+' unité'+(totalCaisses>1?'s':'')+' — '+Object.keys(parClient).length+' client'+(Object.keys(parClient).length>1?'s':'');
+  navigator.clipboard.writeText(txt).then(()=>showToast('📋 Rapport copié !')).catch(()=>{
+    const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); showToast('📋 Rapport copié !');
+  });
+}
+
+// ══════════ PDF ══════════
+function genererPDF(data, dateOverride) {
+  if (!data || data.length === 0) { showToast('⚠️ Aucune saisie'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+  const dateStr = dateOverride || todayStr;
+  const dateComplete = dateOverride ? dateOverride : now.toLocaleDateString('fr-FR', opts).replace(/^\w/, c => c.toUpperCase());
+  const totalCaisses = data.reduce((s,e)=>s+e.nb,0);
+  const nbClients = [...new Set(data.map(e=>e.client))].length;
+  doc.setFillColor(10,37,64); doc.rect(0,0,210,28,'F');
+  doc.setTextColor(255,255,255); doc.setFontSize(16); doc.setFont('helvetica','bold');
+  doc.text('RETOUR CAISSES - RAPPORT',105,12,{align:'center'});
+  doc.setFontSize(9); doc.setFont('helvetica','normal');
+  doc.text(dateComplete,105,20,{align:'center'});
+  doc.setFillColor(232,244,253);
+  doc.roundedRect(10,32,90,14,2,2,'F'); doc.roundedRect(110,32,90,14,2,2,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(0,119,182);
+  doc.text(String(totalCaisses),55,41,{align:'center'}); doc.text(String(nbClients),155,41,{align:'center'});
+  doc.setFontSize(7); doc.setTextColor(107,114,128); doc.setFont('helvetica','normal');
+  doc.text('UNITÉS TOTAL',55,44,{align:'center'}); doc.text('CLIENTS',155,44,{align:'center'});
+  const parClient = {};
+  data.forEach(e=>{ if(!parClient[e.client]) parClient[e.client]=[]; parClient[e.client].push(e); });
+  const rows = [];
+  Object.entries(parClient).forEach(([client,items])=>{
+    const sousTotal=items.reduce((s,e)=>s+e.nb,0);
+    const code=items[0].code||'';
+    rows.push([
+      {content:client,colSpan:3,styles:{fillColor:[26,74,122],textColor:255,fontStyle:'bold',fontSize:9}},
+      {content:code?'Code: '+code:'—',styles:{fillColor:[26,74,122],textColor:[0,200,240],fontStyle:'bold',fontSize:8,halign:'center'}}
+    ]);
+    items.forEach(e=>rows.push([e.heure,e.type,String(e.nb),e.rem||'-']));
+    rows.push([
+      {content:'Sous-total',colSpan:2,styles:{fontStyle:'bold',fillColor:[232,244,253],textColor:[10,37,64]}},
+      {content:String(sousTotal),styles:{fontStyle:'bold',fillColor:[232,244,253],textColor:[0,119,182],halign:'center'}},
+      {content:'',styles:{fillColor:[232,244,253]}}
+    ]);
+  });
+  doc.autoTable({
+    startY:50, head:[['Heure','Type de caisse','Qté','Remarques']],
+    body:rows, theme:'grid',
+    headStyles:{fillColor:[0,180,216],textColor:255,fontStyle:'bold',fontSize:8,halign:'center'},
+    bodyStyles:{fontSize:8,textColor:[10,37,64]},
+    columnStyles:{0:{cellWidth:18,halign:'center'},1:{cellWidth:76},2:{cellWidth:16,halign:'center'},3:{cellWidth:70}},
+    margin:{left:10,right:10}, styles:{lineColor:[209,227,240],lineWidth:0.3}
+  });
+  const finalY=doc.lastAutoTable.finalY+6;
+  doc.setFillColor(10,37,64); doc.roundedRect(10,finalY,190,10,2,2,'F');
+  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.text('TOTAL GÉNÉRAL : '+totalCaisses+' unité'+(totalCaisses>1?'s':'')+' — '+nbClients+' client'+(nbClients>1?'s':''),105,finalY+6.5,{align:'center'});
+  doc.save('retour-caisses-'+dateStr.replace(/\//g,'-')+'.pdf');
+  showToast('📄 PDF téléchargé !');
+}
+
+// ══════════ TOAST ══════════
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+// ══════════ DÉMARRAGE ══════════
+initSupabase();
+</script>
+</body>
+</html>

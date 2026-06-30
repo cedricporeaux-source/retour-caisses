@@ -26,6 +26,10 @@ header p { font-size: 0.8rem; opacity: 0.75; margin-top: 3px; }
 .sync-dot.loading { background: #f59e0b; animation: pulse 1s infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
+/* Bandeau en attente de sync */
+.pending-bar { background: #7c3f00; color: #ffe0a0; text-align: center; font-size: 0.78rem; padding: 7px 12px; font-weight: 600; display: none; align-items: center; justify-content: center; gap: 8px; }
+.pending-bar.visible { display: flex; }
+
 /* Écran choix utilisateur */
 #ecran-utilisateur { position: fixed; top:0; left:0; right:0; bottom:0; background: linear-gradient(135deg, var(--blue-dark), var(--blue-mid)); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; }
 #ecran-utilisateur h2 { color: white; font-size: 1.4rem; margin-bottom: 8px; }
@@ -37,9 +41,7 @@ header p { font-size: 0.8rem; opacity: 0.75; margin-top: 3px; }
 .new-user-box.visible { display: block; }
 .new-user-box input { width: 100%; padding: 13px; border: none; border-radius: 10px; font-size: 1rem; margin-bottom: 8px; text-transform: uppercase; }
 .new-user-box button { width: 100%; padding: 13px; background: var(--green); color: white; border: none; border-radius: 10px; font-size: 1rem; font-weight: 700; cursor: pointer; }
-
 .user-badge { background: var(--accent); color: white; font-size: 0.75rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; display: inline-block; margin-left: 6px; vertical-align: middle; cursor: pointer; }
-
 .tabs { display: flex; background: var(--blue-dark); border-bottom: 2px solid var(--accent); }
 .tab { flex: 1; padding: 11px 4px; text-align: center; font-size: 0.75rem; font-weight: 700; color: rgba(255,255,255,0.5); cursor: pointer; -webkit-tap-highlight-color: transparent; letter-spacing: 0.3px; transition: color 0.2s; }
 .tab.active { color: white; border-bottom: 2px solid var(--accent); margin-bottom: -2px; }
@@ -90,6 +92,7 @@ select:focus, input:focus, textarea:focus { border-color: var(--accent); backgro
 .entry-client { font-weight: 700; font-size: 0.92rem; }
 .entry-code { display: inline-block; background: var(--blue-dark); color: white; font-size: 0.68rem; font-weight: 700; padding: 1px 7px; border-radius: 10px; margin-left: 5px; vertical-align: middle; }
 .entry-user-tag { display: inline-block; background: var(--accent); color: white; font-size: 0.65rem; font-weight: 700; padding: 1px 7px; border-radius: 10px; margin-left: 4px; vertical-align: middle; }
+.entry-pending-tag { display: inline-block; background: #f59e0b; color: white; font-size: 0.65rem; font-weight: 700; padding: 1px 7px; border-radius: 10px; margin-left: 4px; vertical-align: middle; }
 .entry-detail { font-size: 0.78rem; color: var(--gray); margin-top: 2px; }
 .entry-count { font-size: 1.1rem; font-weight: 800; color: var(--accent2); white-space: nowrap; }
 .empty-state { text-align: center; padding: 20px; color: #aaa; font-size: 0.85rem; }
@@ -144,6 +147,11 @@ select:focus, input:focus, textarea:focus { border-color: var(--accent); backgro
   <span id="sync-label">Connexion en cours…</span>
 </div>
 
+<!-- BANDEAU SAISIES EN ATTENTE -->
+<div class="pending-bar" id="pending-bar">
+  ⚠️ <span id="pending-label">Saisies non synchronisées</span> — <button onclick="retrySyncPending()" style="background:none;border:none;color:#ffe0a0;font-weight:700;cursor:pointer;text-decoration:underline;font-size:0.78rem;">Réessayer</button>
+</div>
+
 <div class="tabs">
   <div class="tab active" onclick="showPage('saisie')">✏️ Saisie</div>
   <div class="tab" onclick="showPage('historique')">📅 Historique</div>
@@ -154,7 +162,6 @@ select:focus, input:focus, textarea:focus { border-color: var(--accent); backgro
 
   <div class="card">
     <h2>Nouvelle saisie</h2>
-
     <label>Client</label>
     <div class="client-row">
       <select id="sel-client" onchange="onClientChange()"></select>
@@ -199,8 +206,10 @@ select:focus, input:focus, textarea:focus { border-color: var(--accent); backgro
 
     <label>Nombre</label>
     <input type="number" id="nb-caisses" placeholder="0" min="1" inputmode="numeric">
+
     <label>Remarques (optionnel)</label>
     <textarea id="remarques" rows="2" placeholder="Ex: caisses abîmées, manquantes…"></textarea>
+
     <button class="btn-add" onclick="ajouterEntree()">＋ Ajouter</button>
   </div>
 
@@ -257,6 +266,55 @@ async function supa(table, method='GET', body=null, extra='') {
   return true;
 }
 
+// ══════════ FILE D'ATTENTE HORS LIGNE ══════════
+// Les saisies non syncées sont stockées ici jusqu'à confirmation Supabase
+let pendingQueue = JSON.parse(localStorage.getItem('retour_pending') || '[]');
+
+function savePendingQueue() {
+  localStorage.setItem('retour_pending', JSON.stringify(pendingQueue));
+}
+
+function updatePendingBar() {
+  const bar = document.getElementById('pending-bar');
+  const lbl = document.getElementById('pending-label');
+  if (pendingQueue.length > 0) {
+    bar.classList.add('visible');
+    lbl.textContent = pendingQueue.length + ' saisie' + (pendingQueue.length > 1 ? 's' : '') + ' non synchronisée' + (pendingQueue.length > 1 ? 's' : '');
+  } else {
+    bar.classList.remove('visible');
+  }
+}
+
+async function retrySyncPending() {
+  if (pendingQueue.length === 0) return;
+  setSyncStatus('loading', 'Synchro en cours…');
+  const toRetry = [...pendingQueue];
+  try {
+    await supa('retour_entrees', 'POST', toRetry);
+    // Marquer toutes comme syncées
+    const syncedIds = toRetry.map(e => e.id);
+    pendingQueue = pendingQueue.filter(e => !syncedIds.includes(e.id));
+    savePendingQueue();
+    // Retirer le tag pending des entrées en mémoire
+    entrees = entrees.map(e => syncedIds.includes(e.id) ? { ...e, pending: false } : e);
+    localStorage.setItem('retour_caisses', JSON.stringify(entrees));
+    updatePendingBar();
+    afficher();
+    setSyncStatus('ok', '✅ Synchronisé — ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}));
+    showToast('✅ ' + toRetry.length + ' saisie' + (toRetry.length > 1 ? 's synchronisées' : ' synchronisée') + ' !');
+  } catch(e) {
+    setSyncStatus('err', '❌ Hors ligne — ' + pendingQueue.length + ' en attente');
+    showToast('⚠️ Toujours hors ligne');
+  }
+}
+
+// Retry automatique quand la connexion revient
+window.addEventListener('online', () => {
+  if (pendingQueue.length > 0) {
+    setTimeout(retrySyncPending, 1500);
+  }
+});
+
 // ══════════ UTILISATEURS ══════════
 const USERS_PAR_DEFAUT = ['MICKAEL', 'CEDRIC'];
 let users = JSON.parse(localStorage.getItem('retour_users') || 'null') || [...USERS_PAR_DEFAUT];
@@ -278,9 +336,7 @@ function choisirUtilisateur(nom) {
   initSupabase();
 }
 
-function changerUtilisateur() {
-  afficherEcranUtilisateur();
-}
+function changerUtilisateur() { afficherEcranUtilisateur(); }
 
 function toggleNouvelUtilisateur() {
   const box = document.getElementById('new-user-box');
@@ -291,10 +347,7 @@ function toggleNouvelUtilisateur() {
 function sauvegarderNouvelUtilisateur() {
   const nom = document.getElementById('input-new-user').value.trim().toUpperCase();
   if (!nom) return;
-  if (!users.includes(nom)) {
-    users.push(nom);
-    localStorage.setItem('retour_users', JSON.stringify(users));
-  }
+  if (!users.includes(nom)) { users.push(nom); localStorage.setItem('retour_users', JSON.stringify(users)); }
   document.getElementById('input-new-user').value = '';
   document.getElementById('new-user-box').classList.remove('visible');
   choisirUtilisateur(nom);
@@ -311,6 +364,7 @@ const CLIENTS_PAR_DEFAUT = [
   { nom: 'JAFFRAY MARCEL', code: '' }, { nom: 'LES VIVIERS DU MES', code: '' },
   { nom: "L'ETALE POISSONNERIE", code: '' }, { nom: 'PIRIACAISE POISSONNERIE', code: '' },
 ];
+
 const TYPES_PAR_DEFAUT = [
   'CAISSES VERTES ANCHOIS','BACS 30 L','BACS 30 L EXT',
   'BACS 35 L','BACS 35 L EXT','BACS 60 L','BACS 60 L EXT','PALETTE PLASTIQUE EXPE'
@@ -335,11 +389,14 @@ function setSyncStatus(status, msg) {
 // ══════════ INIT ══════════
 async function initSupabase() {
   setSyncStatus('loading', 'Connexion à Supabase…');
+  updatePendingBar();
   try {
     await chargerClients();
     await chargerTypes();
     await chargerEntreesAujourdhui();
-    setSyncStatus('ok', '✅ Synchronisé — ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}));
+    // Si on avait des saisies en attente, on les envoie maintenant
+    if (pendingQueue.length > 0) await retrySyncPending();
+    else setSyncStatus('ok', '✅ Synchronisé — ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}));
   } catch(e) {
     setSyncStatus('err', '❌ Hors ligne — données locales');
     clients = JSON.parse(localStorage.getItem('retour_clients') || 'null') || CLIENTS_PAR_DEFAUT.map(c=>({...c}));
@@ -368,7 +425,11 @@ async function chargerTypes() {
 
 async function chargerEntreesAujourdhui() {
   const data = await supa('retour_entrees', 'GET', null, '?select=*&date_str=eq.' + encodeURIComponent(todayStr) + '&order=id');
-  entrees = data || []; localStorage.setItem('retour_caisses', JSON.stringify(entrees));
+  // Fusionner avec les saisies pending locales (pas encore sur Supabase)
+  const supabaseIds = (data || []).map(e => e.id);
+  const pendingLocal = pendingQueue.filter(e => !supabaseIds.includes(e.id));
+  entrees = [...(data || []), ...pendingLocal.map(e => ({ ...e, pending: true }))];
+  localStorage.setItem('retour_caisses', JSON.stringify(entrees));
   afficher();
 }
 
@@ -376,8 +437,11 @@ async function chargerDepuisSupabase() {
   setSyncStatus('loading', 'Synchronisation…');
   try {
     await chargerClients(); await chargerTypes(); await chargerEntreesAujourdhui();
-    setSyncStatus('ok', '✅ Synchronisé — ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}));
-    showToast('🔄 Données mises à jour !');
+    if (pendingQueue.length > 0) await retrySyncPending();
+    else {
+      setSyncStatus('ok', '✅ Synchronisé — ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}));
+      showToast('🔄 Données mises à jour !');
+    }
   } catch(e) {
     setSyncStatus('err', '❌ Erreur de connexion');
     showToast('⚠️ Impossible de synchroniser');
@@ -425,6 +489,7 @@ function toggleEditCode() {
     document.getElementById('input-edit-code').focus();
   }
 }
+
 async function sauvegarderCode() {
   const nom = document.getElementById('sel-client').value; if (!nom) return;
   const code = document.getElementById('input-edit-code').value.trim().toUpperCase();
@@ -434,7 +499,9 @@ async function sauvegarderCode() {
   document.getElementById('code-edit-box').classList.remove('visible');
   onClientChange(); showToast('✅ Code enregistré !');
 }
+
 function annulerEditCode() { document.getElementById('code-edit-box').classList.remove('visible'); }
+
 document.getElementById('input-edit-code').addEventListener('keydown', e => {
   if (e.key === 'Enter') sauvegarderCode(); if (e.key === 'Escape') annulerEditCode();
 });
@@ -444,6 +511,7 @@ function toggleNouveauClient() {
   box.classList.toggle('visible');
   if (box.classList.contains('visible')) document.getElementById('input-new-client').focus();
 }
+
 async function sauvegarderNouveauClient() {
   const nom = document.getElementById('input-new-client').value.trim().toUpperCase();
   const code = document.getElementById('input-new-code').value.trim().toUpperCase();
@@ -459,6 +527,7 @@ async function sauvegarderNouveauClient() {
   document.getElementById('new-client-box').classList.remove('visible');
   showToast('✅ Client ajouté !');
 }
+
 function annulerNouveauClient() {
   document.getElementById('input-new-client').value = '';
   document.getElementById('input-new-code').value = '';
@@ -490,6 +559,7 @@ function toggleNouveauType() {
   box.classList.toggle('visible');
   if (box.classList.contains('visible')) document.getElementById('input-new-type').focus();
 }
+
 async function sauvegarderNouveauType() {
   const val = document.getElementById('input-new-type').value.trim().toUpperCase();
   if (!val) { showToast('⚠️ Entre un nom'); return; }
@@ -500,6 +570,7 @@ async function sauvegarderNouveauType() {
   document.getElementById('new-type-box').classList.remove('visible');
   rafraichirTypes(); showToast('✅ Type ajouté !');
 }
+
 function annulerNouveauType() {
   document.getElementById('input-new-type').value = '';
   document.getElementById('new-type-box').classList.remove('visible');
@@ -513,21 +584,46 @@ async function ajouterEntree() {
   if (!nom) { showToast('⚠️ Choisis un client'); return; }
   if (!typeSelectionne) { showToast('⚠️ Choisis un type de caisse'); return; }
   if (!nb || nb < 1) { showToast('⚠️ Entre un nombre valide'); return; }
+
   const cli = getClientObj(nom);
   const entry = {
     id: Date.now(), client: nom, code: cli ? (cli.code || '') : '',
     type: typeSelectionne, nb, rem,
     heure: new Date().toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' }),
     date_str: todayStr,
-    utilisateur: utilisateurActuel
+    utilisateur: utilisateurActuel,
+    pending: true  // marqué en attente par défaut
   };
+
+  // 1. Sauvegarder immédiatement en local
   entrees.push(entry);
   localStorage.setItem('retour_caisses', JSON.stringify(entrees));
-  afficher(); resetForm(); showToast('✅ Ajouté !');
+
+  // 2. Ajouter à la file d'attente pending
+  pendingQueue.push(entry);
+  savePendingQueue();
+  updatePendingBar();
+
+  afficher();
+  resetForm();
+  showToast('✅ Ajouté !');
+
+  // 3. Essayer d'envoyer à Supabase
   try {
     await supa('retour_entrees', 'POST', [entry]);
+    // Succès : retirer de la file pending
+    pendingQueue = pendingQueue.filter(e => e.id !== entry.id);
+    savePendingQueue();
+    // Marquer comme synchronisé
+    entrees = entrees.map(e => e.id === entry.id ? { ...e, pending: false } : e);
+    localStorage.setItem('retour_caisses', JSON.stringify(entrees));
+    updatePendingBar();
+    afficher();
     setSyncStatus('ok', '✅ Synchronisé — ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}));
-  } catch(e) { setSyncStatus('err', '⚠️ Sauvegardé localement'); }
+  } catch(e) {
+    setSyncStatus('err', '⚠️ Sauvegardé localement — hors ligne');
+    // La saisie reste dans pendingQueue, sera renvoyée au prochain retry
+  }
 }
 
 function resetForm() {
@@ -539,7 +635,10 @@ function resetForm() {
 
 async function supprimerEntree(id) {
   entrees = entrees.filter(e => e.id !== id);
+  pendingQueue = pendingQueue.filter(e => e.id !== id);
   localStorage.setItem('retour_caisses', JSON.stringify(entrees));
+  savePendingQueue();
+  updatePendingBar();
   afficher();
   try { await supa('retour_entrees', 'DELETE', null, '?id=eq.' + id); } catch(e){}
 }
@@ -562,7 +661,7 @@ function afficher() {
       ontouchstart="startHold(${e.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()">
       <div class="entry-num">${i+1}</div>
       <div class="entry-info">
-        <div class="entry-client">${e.client}${e.code ? '<span class="entry-code">'+e.code+'</span>' : ''}${e.utilisateur ? '<span class="entry-user-tag">'+e.utilisateur+'</span>' : ''}</div>
+        <div class="entry-client">${e.client}${e.code ? '<span class="entry-code">'+e.code+'</span>' : ''}${e.utilisateur ? '<span class="entry-user-tag">'+e.utilisateur+'</span>' : ''}${e.pending ? '<span class="entry-pending-tag">⏳ attente</span>' : ''}</div>
         <div class="entry-detail">${e.type} · ${e.heure}${e.rem ? ' · ' + e.rem : ''}</div>
       </div>
       <div class="entry-count">${e.nb}</div>
@@ -570,6 +669,7 @@ function afficher() {
     </div>
   `).join('');
   liste.innerHTML += '<div style="text-align:center;font-size:0.7rem;color:#bbb;padding:6px 0;">Appui long pour supprimer une saisie</div>';
+
   const totalCaisses = entrees.reduce((s, e) => s + e.nb, 0);
   const nbClients = [...new Set(entrees.map(e => e.client))].length;
   document.getElementById('total-caisses').textContent = totalCaisses;
@@ -589,10 +689,19 @@ function cancelHold() { if (holdTimer) { clearTimeout(holdTimer); holdTimer = nu
 // ══════════ RESET ══════════
 async function resetSaisies() {
   if (entrees.length === 0) return;
-  if (!confirm('Archiver et effacer les saisies du jour ?')) return;
+  // Bloquer si des saisies sont encore en attente
+  if (pendingQueue.length > 0) {
+    if (!confirm('⚠️ ' + pendingQueue.length + ' saisie(s) ne sont pas encore synchronisées avec le serveur.\n\nForcer quand même l\'archivage ?')) return;
+  } else {
+    if (!confirm('Archiver et effacer les saisies du jour ?')) return;
+  }
   const dateComplete = now.toLocaleDateString('fr-FR', opts).replace(/^\w/, c => c.toUpperCase());
   historique.unshift({ dateStr: todayStr, dateComplete, entrees: [...entrees] });
   localStorage.setItem('retour_historique', JSON.stringify(historique));
+  // Vider la file pending aussi
+  pendingQueue = [];
+  savePendingQueue();
+  updatePendingBar();
   try { await supa('retour_entrees', 'DELETE', null, '?date_str=eq.' + encodeURIComponent(todayStr)); } catch(e){}
   entrees = []; localStorage.setItem('retour_caisses', JSON.stringify(entrees));
   afficher(); showToast('🗑 Journée archivée !');
@@ -632,6 +741,7 @@ function afficherHistorique() {
 }
 
 function toggleHistDay(ji) { document.getElementById('hist-body-'+ji).classList.toggle('open'); }
+
 function supprimerJour(ji) {
   if (!confirm('Supprimer cette journée ?')) return;
   historique.splice(ji, 1);
@@ -667,17 +777,20 @@ function genererPDF(data, dateOverride) {
   const dateComplete = dateOverride ? dateOverride : now.toLocaleDateString('fr-FR', opts).replace(/^\w/, c => c.toUpperCase());
   const totalCaisses = data.reduce((s,e)=>s+e.nb,0);
   const nbClients = [...new Set(data.map(e=>e.client))].length;
+
   doc.setFillColor(10,37,64); doc.rect(0,0,210,28,'F');
   doc.setTextColor(255,255,255); doc.setFontSize(16); doc.setFont('helvetica','bold');
   doc.text('RETOUR CAISSES - RAPPORT',105,12,{align:'center'});
   doc.setFontSize(9); doc.setFont('helvetica','normal');
   doc.text(dateComplete,105,20,{align:'center'});
+
   doc.setFillColor(232,244,253);
   doc.roundedRect(10,32,90,14,2,2,'F'); doc.roundedRect(110,32,90,14,2,2,'F');
   doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(0,119,182);
   doc.text(String(totalCaisses),55,41,{align:'center'}); doc.text(String(nbClients),155,41,{align:'center'});
   doc.setFontSize(7); doc.setTextColor(107,114,128); doc.setFont('helvetica','normal');
   doc.text('UNITÉS TOTAL',55,44,{align:'center'}); doc.text('CLIENTS',155,44,{align:'center'});
+
   const parClient = {};
   data.forEach(e=>{ if(!parClient[e.client]) parClient[e.client]=[]; parClient[e.client].push(e); });
   const rows = [];
@@ -695,6 +808,7 @@ function genererPDF(data, dateOverride) {
       {content:'',styles:{fillColor:[232,244,253]}}
     ]);
   });
+
   doc.autoTable({
     startY:50, head:[['Heure','Type / Utilisateur','Qté','Remarques']],
     body:rows, theme:'grid',
@@ -703,6 +817,7 @@ function genererPDF(data, dateOverride) {
     columnStyles:{0:{cellWidth:18,halign:'center'},1:{cellWidth:76},2:{cellWidth:16,halign:'center'},3:{cellWidth:70}},
     margin:{left:10,right:10}, styles:{lineColor:[209,227,240],lineWidth:0.3}
   });
+
   const finalY=doc.lastAutoTable.finalY+6;
   doc.setFillColor(10,37,64); doc.roundedRect(10,finalY,190,10,2,2,'F');
   doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(9);

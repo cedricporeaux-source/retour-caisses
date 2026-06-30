@@ -25,12 +25,8 @@ header p { font-size: 0.8rem; opacity: 0.75; margin-top: 3px; }
 .sync-dot.err { background: #e74c3c; }
 .sync-dot.loading { background: #f59e0b; animation: pulse 1s infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-
-/* Bandeau en attente de sync */
 .pending-bar { background: #7c3f00; color: #ffe0a0; text-align: center; font-size: 0.78rem; padding: 7px 12px; font-weight: 600; display: none; align-items: center; justify-content: center; gap: 8px; }
 .pending-bar.visible { display: flex; }
-
-/* Écran choix utilisateur */
 #ecran-utilisateur { position: fixed; top:0; left:0; right:0; bottom:0; background: linear-gradient(135deg, var(--blue-dark), var(--blue-mid)); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; }
 #ecran-utilisateur h2 { color: white; font-size: 1.4rem; margin-bottom: 8px; }
 #ecran-utilisateur p { color: rgba(255,255,255,0.7); font-size: 0.85rem; margin-bottom: 30px; text-align: center; }
@@ -125,7 +121,6 @@ select:focus, input:focus, textarea:focus { border-color: var(--accent); backgro
 </head>
 <body>
 
-<!-- ÉCRAN CHOIX UTILISATEUR -->
 <div id="ecran-utilisateur">
   <h2>👤 Qui êtes-vous ?</h2>
   <p>Choisissez votre nom pour identifier vos saisies</p>
@@ -147,7 +142,6 @@ select:focus, input:focus, textarea:focus { border-color: var(--accent); backgro
   <span id="sync-label">Connexion en cours…</span>
 </div>
 
-<!-- BANDEAU SAISIES EN ATTENTE -->
 <div class="pending-bar" id="pending-bar">
   ⚠️ <span id="pending-label">Saisies non synchronisées</span> — <button onclick="retrySyncPending()" style="background:none;border:none;color:#ffe0a0;font-weight:700;cursor:pointer;text-decoration:underline;font-size:0.78rem;">Réessayer</button>
 </div>
@@ -159,7 +153,6 @@ select:focus, input:focus, textarea:focus { border-color: var(--accent); backgro
 
 <div class="page active" id="page-saisie">
   <div class="date-bar" id="datebar"></div>
-
   <div class="card">
     <h2>Nouvelle saisie</h2>
     <label>Client</label>
@@ -192,7 +185,6 @@ select:focus, input:focus, textarea:focus { border-color: var(--accent); backgro
       </div>
     </div>
     <div class="client-separator"></div>
-
     <label>Type de caisse</label>
     <div class="new-type-box" id="new-type-box">
       <label style="color:#155724; margin-bottom:6px;">Nouveau type de caisse</label>
@@ -203,24 +195,19 @@ select:focus, input:focus, textarea:focus { border-color: var(--accent); backgro
       </div>
     </div>
     <div class="type-grid" id="type-grid"></div>
-
     <label>Nombre</label>
     <input type="number" id="nb-caisses" placeholder="0" min="1" inputmode="numeric">
-
     <label>Remarques (optionnel)</label>
     <textarea id="remarques" rows="2" placeholder="Ex: caisses abîmées, manquantes…"></textarea>
-
     <button class="btn-add" onclick="ajouterEntree()">＋ Ajouter</button>
   </div>
-
   <div class="card">
     <div class="list-header">
       <h2 style="margin-bottom:0">Saisies du jour</h2>
       <span class="badge" id="badge-count">0</span>
     </div>
-    <div id="liste-entrees"><div class="empty-state">Aucune saisie pour l'instant</div></div>
+    <div id="liste-entrees"><div class="empty-state">Chargement…</div></div>
   </div>
-
   <div class="card">
     <h2>Récapitulatif</h2>
     <div class="totaux-grid">
@@ -266,13 +253,20 @@ async function supa(table, method='GET', body=null, extra='') {
   return true;
 }
 
-// ══════════ FILE D'ATTENTE HORS LIGNE ══════════
-// Les saisies non syncées sont stockées ici jusqu'à confirmation Supabase
-let pendingQueue = JSON.parse(localStorage.getItem('retour_pending') || '[]');
-
-function savePendingQueue() {
-  localStorage.setItem('retour_pending', JSON.stringify(pendingQueue));
+// ══════════ STOCKAGE FIABLE (IndexedDB + localStorage fallback) ══════════
+// On utilise localStorage mais on évite de le vider par erreur
+function lsGet(key, defaut) {
+  try { const v = localStorage.getItem(key); return v !== null ? JSON.parse(v) : defaut; }
+  catch(e) { return defaut; }
 }
+function lsSet(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {}
+}
+
+// ══════════ FILE D'ATTENTE HORS LIGNE ══════════
+let pendingQueue = lsGet('retour_pending', []);
+
+function savePendingQueue() { lsSet('retour_pending', pendingQueue); }
 
 function updatePendingBar() {
   const bar = document.getElementById('pending-bar');
@@ -291,13 +285,11 @@ async function retrySyncPending() {
   const toRetry = [...pendingQueue];
   try {
     await supa('retour_entrees', 'POST', toRetry);
-    // Marquer toutes comme syncées
     const syncedIds = toRetry.map(e => e.id);
     pendingQueue = pendingQueue.filter(e => !syncedIds.includes(e.id));
     savePendingQueue();
-    // Retirer le tag pending des entrées en mémoire
     entrees = entrees.map(e => syncedIds.includes(e.id) ? { ...e, pending: false } : e);
-    localStorage.setItem('retour_caisses', JSON.stringify(entrees));
+    lsSet('retour_caisses_' + todayStr, entrees);
     updatePendingBar();
     afficher();
     setSyncStatus('ok', '✅ Synchronisé — ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}));
@@ -308,32 +300,27 @@ async function retrySyncPending() {
   }
 }
 
-// Retry automatique quand la connexion revient
 window.addEventListener('online', () => {
-  if (pendingQueue.length > 0) {
-    setTimeout(retrySyncPending, 1500);
-  }
+  if (pendingQueue.length > 0) setTimeout(retrySyncPending, 1500);
 });
 
 // ══════════ UTILISATEURS ══════════
 const USERS_PAR_DEFAUT = ['MICKAEL', 'CEDRIC'];
-let users = JSON.parse(localStorage.getItem('retour_users') || 'null') || [...USERS_PAR_DEFAUT];
-let utilisateurActuel = localStorage.getItem('retour_user_actuel') || '';
+let users = lsGet('retour_users', [...USERS_PAR_DEFAUT]);
+let utilisateurActuel = '';
 
 function afficherEcranUtilisateur() {
   const liste = document.getElementById('liste-users');
-  liste.innerHTML = users.map(u => `
-    <button class="user-btn" onclick="choisirUtilisateur('${u}')">👤 ${u}</button>
-  `).join('');
+  liste.innerHTML = users.map(u => `<button class="user-btn" onclick="choisirUtilisateur('${u}')">👤 ${u}</button>`).join('');
   document.getElementById('ecran-utilisateur').style.display = 'flex';
 }
 
 function choisirUtilisateur(nom) {
   utilisateurActuel = nom;
-  localStorage.setItem('retour_user_actuel', nom);
+  lsSet('retour_user_actuel', nom);
   document.getElementById('ecran-utilisateur').style.display = 'none';
   document.getElementById('header-user').innerHTML = '👤 <b>' + nom + '</b> <span class="user-badge" onclick="changerUtilisateur()">changer</span>';
-  initSupabase();
+  initApp();
 }
 
 function changerUtilisateur() { afficherEcranUtilisateur(); }
@@ -347,7 +334,7 @@ function toggleNouvelUtilisateur() {
 function sauvegarderNouvelUtilisateur() {
   const nom = document.getElementById('input-new-user').value.trim().toUpperCase();
   if (!nom) return;
-  if (!users.includes(nom)) { users.push(nom); localStorage.setItem('retour_users', JSON.stringify(users)); }
+  if (!users.includes(nom)) { users.push(nom); lsSet('retour_users', users); }
   document.getElementById('input-new-user').value = '';
   document.getElementById('new-user-box').classList.remove('visible');
   choisirUtilisateur(nom);
@@ -372,7 +359,7 @@ const TYPES_PAR_DEFAUT = [
 
 let clients = [];
 let types = [];
-let historique = JSON.parse(localStorage.getItem('retour_historique') || '[]');
+let historique = lsGet('retour_historique', []);
 
 const now = new Date();
 const todayStr = now.toLocaleDateString('fr-FR');
@@ -380,36 +367,48 @@ const opts = { weekday:'long', day:'numeric', month:'long', year:'numeric' };
 document.getElementById('datebar').textContent =
   now.toLocaleDateString('fr-FR', opts).replace(/^\w/, c => c.toUpperCase());
 
-// ══════════ SYNC STATUS ══════════
 function setSyncStatus(status, msg) {
   document.getElementById('sync-dot').className = 'sync-dot ' + status;
   document.getElementById('sync-label').textContent = msg;
 }
 
-// ══════════ INIT ══════════
-async function initSupabase() {
-  setSyncStatus('loading', 'Connexion à Supabase…');
+// ══════════ INIT — AFFICHE D'ABORD LE LOCAL, PUIS SUPABASE ══════════
+async function initApp() {
   updatePendingBar();
+
+  // ÉTAPE 1 : afficher immédiatement les données locales (clé par date)
+  clients = lsGet('retour_clients', CLIENTS_PAR_DEFAUT.map(c=>({...c})));
+  types = lsGet('retour_types', [...TYPES_PAR_DEFAUT]);
+  // Clé de cache par date pour éviter de mélanger les jours
+  const cachedEntrees = lsGet('retour_caisses_' + todayStr, []);
+  // Fusionner avec pending
+  const cachedIds = cachedEntrees.map(e => e.id);
+  const pendingLocal = pendingQueue.filter(e => !cachedIds.includes(e.id));
+  entrees = [...cachedEntrees, ...pendingLocal.map(e => ({ ...e, pending: true }))];
+  rafraichirSelectClient();
+  rafraichirTypes();
+  afficher();
+  setSyncStatus('loading', 'Synchronisation…');
+
+  // ÉTAPE 2 : charger depuis Supabase en arrière-plan
   try {
     await chargerClients();
     await chargerTypes();
     await chargerEntreesAujourdhui();
-    // Si on avait des saisies en attente, on les envoie maintenant
-    if (pendingQueue.length > 0) await retrySyncPending();
-    else setSyncStatus('ok', '✅ Synchronisé — ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}));
+    if (pendingQueue.length > 0) {
+      await retrySyncPending();
+    } else {
+      setSyncStatus('ok', '✅ Synchronisé — ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}));
+    }
   } catch(e) {
-    setSyncStatus('err', '❌ Hors ligne — données locales');
-    clients = JSON.parse(localStorage.getItem('retour_clients') || 'null') || CLIENTS_PAR_DEFAUT.map(c=>({...c}));
-    types = JSON.parse(localStorage.getItem('retour_types') || 'null') || [...TYPES_PAR_DEFAUT];
-    entrees = JSON.parse(localStorage.getItem('retour_caisses') || '[]');
-    rafraichirSelectClient(); rafraichirTypes(); afficher();
+    setSyncStatus('err', '❌ Hors ligne — données locales affichées');
   }
 }
 
 async function chargerClients() {
   let data = await supa('retour_clients', 'GET', null, '?select=nom,code&order=nom');
   if (!data || data.length === 0) { await supa('retour_clients', 'POST', CLIENTS_PAR_DEFAUT); data = CLIENTS_PAR_DEFAUT; }
-  clients = data; localStorage.setItem('retour_clients', JSON.stringify(clients));
+  clients = data; lsSet('retour_clients', clients);
   rafraichirSelectClient();
 }
 
@@ -419,17 +418,17 @@ async function chargerTypes() {
     const payload = TYPES_PAR_DEFAUT.map(t => ({ nom: t, est_defaut: true }));
     await supa('retour_types', 'POST', payload); data = payload;
   }
-  types = data.map(t => t.nom); localStorage.setItem('retour_types', JSON.stringify(types));
+  types = data.map(t => t.nom); lsSet('retour_types', types);
   rafraichirTypes();
 }
 
 async function chargerEntreesAujourdhui() {
   const data = await supa('retour_entrees', 'GET', null, '?select=*&date_str=eq.' + encodeURIComponent(todayStr) + '&order=id');
-  // Fusionner avec les saisies pending locales (pas encore sur Supabase)
+  // Fusionner Supabase + pending locaux non encore envoyés
   const supabaseIds = (data || []).map(e => e.id);
   const pendingLocal = pendingQueue.filter(e => !supabaseIds.includes(e.id));
   entrees = [...(data || []), ...pendingLocal.map(e => ({ ...e, pending: true }))];
-  localStorage.setItem('retour_caisses', JSON.stringify(entrees));
+  lsSet('retour_caisses_' + todayStr, entrees);
   afficher();
 }
 
@@ -494,7 +493,7 @@ async function sauvegarderCode() {
   const nom = document.getElementById('sel-client').value; if (!nom) return;
   const code = document.getElementById('input-edit-code').value.trim().toUpperCase();
   const cli = getClientObj(nom); if (cli) cli.code = code;
-  localStorage.setItem('retour_clients', JSON.stringify(clients));
+  lsSet('retour_clients', clients);
   try { await supa('retour_clients', 'POST', [{ nom, code }]); } catch(e){}
   document.getElementById('code-edit-box').classList.remove('visible');
   onClientChange(); showToast('✅ Code enregistré !');
@@ -519,7 +518,7 @@ async function sauvegarderNouveauClient() {
   if (clients.find(c => c.nom === nom)) { showToast('⚠️ Client déjà existant'); return; }
   clients.push({ nom, code });
   clients.sort((a, b) => a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base' }));
-  localStorage.setItem('retour_clients', JSON.stringify(clients));
+  lsSet('retour_clients', clients);
   try { await supa('retour_clients', 'POST', [{ nom, code }]); } catch(e){}
   rafraichirSelectClient(nom);
   document.getElementById('input-new-client').value = '';
@@ -564,7 +563,7 @@ async function sauvegarderNouveauType() {
   const val = document.getElementById('input-new-type').value.trim().toUpperCase();
   if (!val) { showToast('⚠️ Entre un nom'); return; }
   if (types.includes(val)) { showToast('⚠️ Type déjà existant'); return; }
-  types.push(val); localStorage.setItem('retour_types', JSON.stringify(types));
+  types.push(val); lsSet('retour_types', types);
   try { await supa('retour_types', 'POST', [{ nom: val, est_defaut: false }]); } catch(e){}
   document.getElementById('input-new-type').value = '';
   document.getElementById('new-type-box').classList.remove('visible');
@@ -592,37 +591,31 @@ async function ajouterEntree() {
     heure: new Date().toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' }),
     date_str: todayStr,
     utilisateur: utilisateurActuel,
-    pending: true  // marqué en attente par défaut
+    pending: true
   };
 
-  // 1. Sauvegarder immédiatement en local
+  // 1. Sauvegarder localement immédiatement
   entrees.push(entry);
-  localStorage.setItem('retour_caisses', JSON.stringify(entrees));
-
-  // 2. Ajouter à la file d'attente pending
+  lsSet('retour_caisses_' + todayStr, entrees);
   pendingQueue.push(entry);
   savePendingQueue();
   updatePendingBar();
-
   afficher();
   resetForm();
   showToast('✅ Ajouté !');
 
-  // 3. Essayer d'envoyer à Supabase
+  // 2. Envoyer à Supabase
   try {
     await supa('retour_entrees', 'POST', [entry]);
-    // Succès : retirer de la file pending
     pendingQueue = pendingQueue.filter(e => e.id !== entry.id);
     savePendingQueue();
-    // Marquer comme synchronisé
     entrees = entrees.map(e => e.id === entry.id ? { ...e, pending: false } : e);
-    localStorage.setItem('retour_caisses', JSON.stringify(entrees));
+    lsSet('retour_caisses_' + todayStr, entrees);
     updatePendingBar();
     afficher();
     setSyncStatus('ok', '✅ Synchronisé — ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}));
   } catch(e) {
     setSyncStatus('err', '⚠️ Sauvegardé localement — hors ligne');
-    // La saisie reste dans pendingQueue, sera renvoyée au prochain retry
   }
 }
 
@@ -636,7 +629,7 @@ function resetForm() {
 async function supprimerEntree(id) {
   entrees = entrees.filter(e => e.id !== id);
   pendingQueue = pendingQueue.filter(e => e.id !== id);
-  localStorage.setItem('retour_caisses', JSON.stringify(entrees));
+  lsSet('retour_caisses_' + todayStr, entrees);
   savePendingQueue();
   updatePendingBar();
   afficher();
@@ -661,7 +654,7 @@ function afficher() {
       ontouchstart="startHold(${e.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()">
       <div class="entry-num">${i+1}</div>
       <div class="entry-info">
-        <div class="entry-client">${e.client}${e.code ? '<span class="entry-code">'+e.code+'</span>' : ''}${e.utilisateur ? '<span class="entry-user-tag">'+e.utilisateur+'</span>' : ''}${e.pending ? '<span class="entry-pending-tag">⏳ attente</span>' : ''}</div>
+        <div class="entry-client">${e.client}${e.code ? '<span class="entry-code">'+e.code+'</span>' : ''}${e.utilisateur ? '<span class="entry-user-tag">'+e.utilisateur+'</span>' : ''}${e.pending ? '<span class="entry-pending-tag">⏳</span>' : ''}</div>
         <div class="entry-detail">${e.type} · ${e.heure}${e.rem ? ' · ' + e.rem : ''}</div>
       </div>
       <div class="entry-count">${e.nb}</div>
@@ -689,21 +682,17 @@ function cancelHold() { if (holdTimer) { clearTimeout(holdTimer); holdTimer = nu
 // ══════════ RESET ══════════
 async function resetSaisies() {
   if (entrees.length === 0) return;
-  // Bloquer si des saisies sont encore en attente
   if (pendingQueue.length > 0) {
-    if (!confirm('⚠️ ' + pendingQueue.length + ' saisie(s) ne sont pas encore synchronisées avec le serveur.\n\nForcer quand même l\'archivage ?')) return;
+    if (!confirm('⚠️ ' + pendingQueue.length + ' saisie(s) pas encore synchronisées.\n\nForcer quand même l\'archivage ?')) return;
   } else {
     if (!confirm('Archiver et effacer les saisies du jour ?')) return;
   }
   const dateComplete = now.toLocaleDateString('fr-FR', opts).replace(/^\w/, c => c.toUpperCase());
   historique.unshift({ dateStr: todayStr, dateComplete, entrees: [...entrees] });
-  localStorage.setItem('retour_historique', JSON.stringify(historique));
-  // Vider la file pending aussi
-  pendingQueue = [];
-  savePendingQueue();
-  updatePendingBar();
+  lsSet('retour_historique', historique);
+  pendingQueue = []; savePendingQueue(); updatePendingBar();
   try { await supa('retour_entrees', 'DELETE', null, '?date_str=eq.' + encodeURIComponent(todayStr)); } catch(e){}
-  entrees = []; localStorage.setItem('retour_caisses', JSON.stringify(entrees));
+  entrees = []; lsSet('retour_caisses_' + todayStr, []);
   afficher(); showToast('🗑 Journée archivée !');
 }
 
@@ -745,7 +734,7 @@ function toggleHistDay(ji) { document.getElementById('hist-body-'+ji).classList.
 function supprimerJour(ji) {
   if (!confirm('Supprimer cette journée ?')) return;
   historique.splice(ji, 1);
-  localStorage.setItem('retour_historique', JSON.stringify(historique));
+  lsSet('retour_historique', historique);
   afficherHistorique(); showToast('🗑 Journée supprimée');
 }
 
